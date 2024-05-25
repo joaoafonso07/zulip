@@ -401,7 +401,8 @@
                 .btn-link,
                 .poll-vote,
                 button.poll-option,
-                button.add-task
+                button.add-task,
+                button.assign
             ) {
             border-color: hsl(0deg 0% 0% / 60%);
             color: inherit;

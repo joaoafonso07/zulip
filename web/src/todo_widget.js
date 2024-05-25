@@ -331,7 +331,72 @@ export function activate({$elem, callback, extra_data, message}) {
         $elem.find("button.todo-task-list-title-remove").on("click", (e) => {
             e.stopPropagation();
             abort_edit();
+        });        
+        
+        $elem.find("button.assign").on("click", (e) => {
+            const typeaheadContainer = document.getElementById('typeahead-container');
+        
+            // Check if the dropdown menu is already visible
+            if (typeaheadContainer.classList.contains('open')) {
+                // If it is visible, hide it
+                closeDropdown(typeaheadContainer);
+            } else {
+                // If it is not visible, show it
+                openDropdown(typeaheadContainer);
+            }
         });
+        
+        function openDropdown(typeaheadContainer) {
+            typeaheadContainer.classList.add('open');
+        
+            // Create the typeahead dropdown menu structure
+            const typeaheadDropdownMenu = document.createElement('div');
+            typeaheadDropdownMenu.classList.add('typeahead', 'dropdown-menu');
+            
+            const typeaheadMenu = document.createElement('ul');
+            typeaheadMenu.classList.add('typeahead-menu');
+        
+            const items = ['Item 1', 'Item 2', 'Item 3'];
+            items.forEach(item => {
+                const listItem = document.createElement('li');
+                const link = document.createElement('a');
+                link.href = '#';
+                link.textContent = item;
+                listItem.appendChild(link);
+                typeaheadMenu.appendChild(listItem);
+            });
+        
+            typeaheadDropdownMenu.appendChild(typeaheadMenu);
+            typeaheadContainer.appendChild(typeaheadDropdownMenu);
+        
+            // Add event listeners for closing the dropdown
+            document.addEventListener('click', clickOutsideHandler);
+            document.addEventListener('keydown', keydownHandler);
+        }
+        
+        function closeDropdown(typeaheadContainer) {
+            typeaheadContainer.classList.remove('open');
+            typeaheadContainer.innerHTML = '';
+        
+            // Remove event listeners for closing the dropdown
+            document.removeEventListener('click', clickOutsideHandler);
+            document.removeEventListener('keydown', keydownHandler);
+        }
+        
+        function clickOutsideHandler(event) {
+            const typeaheadContainer = document.getElementById('typeahead-container');
+            const assignButton = document.querySelector("button.assign");
+            if (!typeaheadContainer.contains(event.target) && !assignButton.contains(event.target)) {
+                closeDropdown(typeaheadContainer);
+            }
+        }
+        
+        function keydownHandler(event) {
+            if (event.key === 'Escape') {
+                const typeaheadContainer = document.getElementById('typeahead-container');
+                closeDropdown(typeaheadContainer);
+            }
+        }
 
         $elem.find("button.add-task").on("click", (e) => {
             e.stopPropagation();

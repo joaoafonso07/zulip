@@ -69,3 +69,7 @@
 .typeahead {
   z-index: 1051;
 }
+
+.dropdown-menu-no-padding {
+  padding: 0 !important; /* Override padding property */
+}
