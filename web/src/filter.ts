@@ -123,9 +123,15 @@ function message_in_home(message: Message): boolean {
         return true;
     }
 
+    if (user_topics.is_topic_muted(message.stream_id, message.topic)) {
+        // If topic is muted, we don't show the message.
+        return false;
+    }
+
     return (
+        // If stream is muted, we show the message if topic is unmuted or followed.
         !stream_data.is_muted(message.stream_id) ||
-        user_topics.is_topic_unmuted(message.stream_id, message.topic)
+        user_topics.is_topic_unmuted_or_followed(message.stream_id, message.topic)
     );
 }
 
@@ -226,15 +232,15 @@ function message_matches_search_term(message: Message, operator: string, operand
         }
 
         case "dm-including": {
-            const operand_ids = people.pm_with_operand_ids(operand);
-            if (!operand_ids) {
+            const operand_user = people.get_by_email(operand);
+            if (operand_user === undefined) {
                 return false;
             }
             const user_ids = people.all_user_ids_in_pm(message);
             if (!user_ids) {
                 return false;
             }
-            return user_ids.includes(operand_ids[0]);
+            return user_ids.includes(operand_user.user_id);
         }
     }
 
@@ -243,7 +249,7 @@ function message_matches_search_term(message: Message, operator: string, operand
 
 export class Filter {
     _terms: NarrowTerm[];
-    _sub?: StreamSubscription;
+    _sub?: StreamSubscription | undefined;
     _sorted_term_types?: string[] = undefined;
     _predicate?: (message: Message) => boolean;
     _can_mark_messages_read?: boolean;
@@ -914,8 +920,8 @@ export class Filter {
 
     add_icon_data(context: {
         title: string;
-        description?: string;
-        link?: string;
+        description?: string | undefined;
+        link?: string | undefined;
         is_spectator: boolean;
     }): IconData {
         // We have special icons for the simple narrows available for the via sidebars.

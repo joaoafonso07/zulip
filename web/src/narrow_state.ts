@@ -101,8 +101,9 @@ export function set_compose_defaults(): {
         }
     }
 
-    if (single.has("topic")) {
-        opts.topic = single.get("topic");
+    const topic = single.get("topic");
+    if (topic !== undefined) {
+        opts.topic = topic;
     }
 
     const private_message_recipient = single.get("dm");
@@ -137,6 +138,7 @@ export function stream_sub(
         return undefined;
     }
     const stream_operands = current_filter.operands("channel");
+
     if (stream_operands.length !== 1) {
         return undefined;
     }
@@ -354,13 +356,6 @@ export function narrowed_by_stream_reply(current_filter: Filter | undefined = fi
     }
     const terms = current_filter.terms();
     return terms.length === 1 && current_filter.operands("channel").length === 1;
-}
-
-export function narrowed_to_topic(current_filter: Filter | undefined = filter()): boolean {
-    if (current_filter === undefined) {
-        return false;
-    }
-    return current_filter.has_operator("channel") && current_filter.has_operator("topic");
 }
 
 export function is_for_stream_id(stream_id: number, filter?: Filter): boolean {

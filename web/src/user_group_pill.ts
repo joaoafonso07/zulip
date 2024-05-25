@@ -5,13 +5,16 @@ import * as user_groups from "./user_groups";
 
 export type UserGroupPill = {
     type: "user_group";
-    id: number;
+    group_id: number;
     group_name: string;
 };
 
 type UserGroupPillWidget = InputPillContainer<UserGroupPill>;
 
-export type UserGroupPillData = UserGroup & {type: "user_group"};
+export type UserGroupPillData = UserGroup & {
+    type: "user_group";
+    is_silent?: boolean;
+};
 
 function display_pill(group: UserGroup): string {
     return `${group.name}: ${group.members.size} users`;
@@ -27,14 +30,14 @@ export function create_item_from_group_name(
         return undefined;
     }
 
-    if (current_items.some((item) => item.type === "user_group" && item.id === group.id)) {
+    if (current_items.some((item) => item.type === "user_group" && item.group_id === group.id)) {
         return undefined;
     }
 
     return {
         type: "user_group",
         display_value: display_pill(group),
-        id: group.id,
+        group_id: group.id,
         group_name: group.name,
     };
 }
@@ -48,7 +51,7 @@ export function get_user_ids(pill_widget: UserGroupPillWidget | CombinedPillCont
         .items()
         .flatMap((item) =>
             item.type === "user_group"
-                ? [...user_groups.get_user_group_from_id(item.id).members]
+                ? [...user_groups.get_user_group_from_id(item.group_id).members]
                 : [],
         );
     user_ids = [...new Set(user_ids)];
@@ -62,7 +65,7 @@ export function append_user_group(group: UserGroup, pill_widget: CombinedPillCon
     pill_widget.appendValidatedData({
         type: "user_group",
         display_value: display_pill(group),
-        id: group.id,
+        group_id: group.id,
         group_name: group.name,
     });
     pill_widget.clear_text();
@@ -70,7 +73,7 @@ export function append_user_group(group: UserGroup, pill_widget: CombinedPillCon
 
 export function get_group_ids(pill_widget: CombinedPillContainer): number[] {
     const items = pill_widget.items();
-    return items.flatMap((item) => (item.type === "user_group" ? item.id : []));
+    return items.flatMap((item) => (item.type === "user_group" ? item.group_id : []));
 }
 
 export function filter_taken_groups(

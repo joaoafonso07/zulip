@@ -44,6 +44,7 @@ import re2
 import regex
 import requests
 import uri_template
+import urllib3.exceptions
 from django.conf import settings
 from markdown.blockparser import BlockParser
 from markdown.extensions import codehilite, nl2br, sane_lists, tables
@@ -474,7 +475,7 @@ def fetch_open_graph_image(url: str) -> Optional[Dict[str, Any]]:
                     elif element.get("property") == "og:description":
                         og["desc"] = element.get("content")
 
-    except requests.RequestException:
+    except (requests.RequestException, urllib3.exceptions.HTTPError):
         return None
 
     return None if og["image"] is None else og
@@ -1417,7 +1418,15 @@ class Timestamp(markdown.inlinepatterns.Pattern):
         # Use HTML5 <time> element for valid timestamps.
         time_element = Element("time")
         if timestamp.tzinfo:
-            timestamp = timestamp.astimezone(timezone.utc)
+            try:
+                timestamp = timestamp.astimezone(timezone.utc)
+            except ValueError:
+                error_element = Element("span")
+                error_element.set("class", "timestamp-error")
+                error_element.text = markdown.util.AtomicString(
+                    f"Invalid time format: {time_input_string}"
+                )
+                return error_element
         else:
             timestamp = timestamp.replace(tzinfo=timezone.utc)
         time_element.set("datetime", timestamp.isoformat().replace("+00:00", "Z"))

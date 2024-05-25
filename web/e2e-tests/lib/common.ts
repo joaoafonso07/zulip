@@ -207,7 +207,7 @@ export async function get_text_from_selector(page: Page, selector: string): Prom
 
 export async function check_compose_state(
     page: Page,
-    params: Record<string, string>,
+    params: {stream_name?: string; topic?: string; content: string},
 ): Promise<void> {
     const form_params: Record<string, string> = {content: params.content};
     if (params.stream_name) {
@@ -628,9 +628,9 @@ export async function run_test_async(test_function: (page: Page) => Promise<void
             columnNumber,
         }: ConsoleMessageLocation): Promise<string> => {
             let frame = new StackFrame({
-                fileName: url,
-                lineNumber: lineNumber === undefined ? undefined : lineNumber + 1,
-                columnNumber: columnNumber === undefined ? undefined : columnNumber + 1,
+                ...(url !== undefined && {fileName: url}),
+                ...(lineNumber !== undefined && {lineNumber: lineNumber + 1}),
+                ...(columnNumber !== undefined && {columnNumber: columnNumber + 1}),
             });
             try {
                 frame = await gps.getMappedLocation(frame);

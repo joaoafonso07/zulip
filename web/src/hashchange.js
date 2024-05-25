@@ -73,6 +73,12 @@ function is_somebody_else_profile_open() {
 }
 
 export function set_hash_to_home_view(triggered_by_escape_key = false) {
+    const current_hash = window.location.hash;
+    if (current_hash === "") {
+        // Empty hash for home view is always valid.
+        return;
+    }
+
     let home_view_hash = `#${user_settings.web_home_view}`;
     if (home_view_hash === "#recent_topics") {
         home_view_hash = "#recent";
@@ -82,7 +88,7 @@ export function set_hash_to_home_view(triggered_by_escape_key = false) {
         home_view_hash = "#feed";
     }
 
-    if (window.location.hash !== home_view_hash) {
+    if (current_hash !== home_view_hash) {
         const hash_before_current = browser_history.old_hash();
         if (
             triggered_by_escape_key &&
@@ -487,6 +493,8 @@ function hashchanged(from_reload, e) {
         return undefined;
     }
 
+    popovers.hide_all();
+
     if (hash_parser.is_overlay_hash(current_hash)) {
         browser_history.state.changing_hash = true;
         do_hashchange_overlay(old_hash);
@@ -497,7 +505,6 @@ function hashchanged(from_reload, e) {
     // We are changing to a "main screen" view.
     overlays.close_for_hash_change();
     sidebar_ui.hide_all();
-    popovers.hide_all();
     modals.close_active_if_any();
     browser_history.state.changing_hash = true;
     const ret = do_hashchange_normal(from_reload);

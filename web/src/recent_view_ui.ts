@@ -111,6 +111,9 @@ let dropdown_filters = new Set<string>();
 const recent_conversation_key_prefix = "recent_conversation:";
 
 let is_initial_message_fetch_pending = true;
+// We wait for rows to render and restore focus before processing
+// any new events.
+let is_waiting_for_revive_current_focus = true;
 
 export function set_initial_message_fetch_status(value: boolean): void {
     is_initial_message_fetch_pending = value;
@@ -175,9 +178,22 @@ let oldest_message_timestamp = Number.POSITIVE_INFINITY;
 function set_oldest_message_date(msg_list_data: MessageListData): void {
     const has_found_oldest = msg_list_data.fetch_status.has_found_oldest();
     const has_found_newest = msg_list_data.fetch_status.has_found_newest();
+    const oldest_message_in_data = msg_list_data.first_including_muted();
+    if (oldest_message_in_data) {
+        oldest_message_timestamp = Math.min(
+            oldest_message_in_data.timestamp,
+            oldest_message_timestamp,
+        );
+    }
 
-    const first_message_timestamp = msg_list_data.first()?.timestamp ?? Number.POSITIVE_INFINITY;
-    oldest_message_timestamp = Math.min(first_message_timestamp, oldest_message_timestamp);
+    if (oldest_message_timestamp === Number.POSITIVE_INFINITY && !has_found_oldest) {
+        // This should only happen either very early in loading the
+        // message list, since it requires the msg_list_data object
+        // being empty, without having server confirmation that's the
+        // case. Wait for server data to do anything in that
+        // situation.
+        return;
+    }
 
     if (has_found_oldest) {
         loading_state = ALL_MESSAGES_LOADED;
@@ -779,7 +795,7 @@ export function update_topics_of_deleted_message_ids(message_ids: number[]): voi
     }
 }
 
-export function filters_should_hide_topic(topic_data: ConversationData): boolean {
+export function filters_should_hide_row(topic_data: ConversationData): boolean {
     const msg = message_store.get(topic_data.last_msg_id);
     assert(msg !== undefined);
 
@@ -845,13 +861,21 @@ export function filters_should_hide_topic(topic_data: ConversationData): boolean
         return true;
     }
 
+    const search_keyword = $<HTMLInputElement>("#recent_view_search").val();
+    assert(search_keyword !== undefined);
     if (msg.type === "stream") {
-        const search_keyword = $<HTMLInputElement>("#recent_view_search").val();
-        assert(search_keyword !== undefined);
         const stream_name = stream_data.get_stream_name_from_id(msg.stream_id);
         if (!topic_in_search_results(search_keyword, stream_name, msg.topic)) {
             return true;
         }
+    } else {
+        assert(msg.type === "private");
+        // Display recipient contains user information for DMs.
+        assert(typeof msg.display_recipient !== "string");
+        const participants = [...msg.display_recipient].map((recipient) =>
+            people.get_by_user_id(recipient.id),
+        );
+        return people.filter_people_by_search_terms(participants, search_keyword).size === 0;
     }
 
     return false;
@@ -878,7 +902,7 @@ export function inplace_rerender(topic_key: string): boolean {
     assert(topics_widget !== undefined);
     topics_widget.filter_and_sort();
     const current_topics_list = topics_widget.get_current_list();
-    if (is_topic_rendered && filters_should_hide_topic(topic_data)) {
+    if (is_topic_rendered && filters_should_hide_row(topic_data)) {
         // Since the row needs to be removed from DOM, we need to adjust `row_focus`
         // if the row being removed is focused and is the last row in the list.
         // This prevents the row_focus either being reset to the first row or
@@ -891,16 +915,16 @@ export function inplace_rerender(topic_key: string): boolean {
             row_focus = current_topics_list.length - 1;
         }
         topics_widget.remove_rendered_row($topic_row);
-    } else if (!is_topic_rendered && filters_should_hide_topic(topic_data)) {
+    } else if (!is_topic_rendered && filters_should_hide_row(topic_data)) {
         // In case `topic_row` is not present, our job is already done here
         // since it has not been rendered yet and we already removed it from
         // the filtered list in `topic_widget`. So, it won't be displayed in
         // the future too.
-    } else if (is_topic_rendered && !filters_should_hide_topic(topic_data)) {
+    } else if (is_topic_rendered && !filters_should_hide_row(topic_data)) {
         // Only a re-render is required in this case.
         topics_widget.render_item(topic_data);
     } else {
-        // Final case: !is_topic_rendered && !filters_should_hide_topic(topic_data).
+        // Final case: !is_topic_rendered && !filters_should_hide_row(topic_data).
         topics_widget.insert_rendered_row(topic_data, () =>
             current_topics_list.findIndex(
                 (list_item) => list_item.last_msg_id === topic_data.last_msg_id,
@@ -1090,6 +1114,10 @@ function topic_offset_to_visible_area($topic_row: JQuery): string | undefined {
 }
 
 function recenter_focus_if_off_screen(): void {
+    if (is_waiting_for_revive_current_focus) {
+        return;
+    }
+
     const table_wrapper_element = $("#recent_view_table .table_fix_head")[0];
     const $topic_rows = $("#recent_view_table table tbody tr");
 
@@ -1112,8 +1140,21 @@ function recenter_focus_if_off_screen(): void {
         const topic_center_y = (position.top + position.bottom) / 2;
 
         const topic_element = document.elementFromPoint(topic_center_x, topic_center_y);
-        assert(topic_element !== null);
-        row_focus = $topic_rows.index($(topic_element).closest("tr")[0]);
+        if (topic_element === null) {
+            // There are two theoretical reasons that the center
+            // element might be null. One is that we haven't rendered
+            // the view yet; but in that case, we should have returned
+            // early checking is_waiting_for_revive_current_focus:
+            //
+            // The other possibility is that the table is too short
+            // for there to be an topic row element at the center of
+            // the table region; in that case, we just select the last
+            // element.
+            row_focus = $topic_rows.length - 1;
+        } else {
+            row_focus = $topic_rows.index($(topic_element).closest("tr")[0]);
+        }
+
         set_table_focus(row_focus, col_focus);
     }
 }
@@ -1132,7 +1173,10 @@ function is_scroll_position_for_render(scroll_container: HTMLElement): boolean {
 
 function callback_after_render(): void {
     update_load_more_banner();
-    setTimeout(revive_current_focus, 0);
+    setTimeout(() => {
+        revive_current_focus();
+        is_waiting_for_revive_current_focus = false;
+    }, 0);
 }
 
 function filter_click_handler(
@@ -1195,10 +1239,10 @@ export function complete_rerender(): void {
             return render_recent_view_row(format_conversation(item));
         },
         filter: {
-            // We use update_filters_view & filters_should_hide_topic to do all the
+            // We use update_filters_view & filters_should_hide_row to do all the
             // filtering for us, which is called using click_handlers.
             predicate(topic_data) {
-                return !filters_should_hide_topic(topic_data);
+                return !filters_should_hide_row(topic_data);
             },
         },
         sort_fields: {
@@ -1260,6 +1304,7 @@ function filter_buttons(): JQuery {
 }
 
 export function hide(): void {
+    is_waiting_for_revive_current_focus = true;
     views_util.hide({
         $view: $("#recent_view"),
         set_visible: recent_view_util.set_visible,
@@ -1611,7 +1656,7 @@ export function initialize({
     on_click_participant: (avatar_element: Element, participant_user_id: number) => void;
     on_mark_pm_as_read: (user_ids_string: string) => void;
     on_mark_topic_as_read: (stream_id: number, topic: string) => void;
-    maybe_load_older_messages: () => void;
+    maybe_load_older_messages: (first_unread_unmuted_message_id: number) => void;
 }): void {
     load_filters();
 
@@ -1792,7 +1837,7 @@ export function initialize({
             $(".recent-view-load-more-container .fetch-messages-button .loading-indicator"),
             {width: 20},
         );
-        maybe_load_older_messages();
+        maybe_load_older_messages(unread.first_unread_unmuted_message_id);
     });
 
     $(document).on("compose_canceled.zulip", () => {
